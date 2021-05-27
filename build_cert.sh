@@ -21,7 +21,7 @@
 #
 
 #
-# Copyright 2017 Bonfig GmbH
+# Copyright 2017-2021 Bonfig GmbH
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,14 +40,15 @@ C="DE"
 O="Bonfig GmbH"
 
 CA_NAME="bonfig-ca"
-CA_SUBJECT="/C=$C/O=$O/CN=$O One Time CA $(date --rfc-3339=date)"
+CA_SUBJECT="/C=$C/O=$O/CN=$O One Time CA $(date '+%Y-%m-%d')"
 
-NAME="localhost"
-SUBJECT="/C=$C/O=$O/CN=localhost"
+NAME="server"
+SUBJECT="/C=$C/O=$O/CN=server"
 SAN="DNS:localhost, IP:127.0.0.1, IP:0:0:0:0:0:0:0:1"
 
-DAYS=3652
-PASS="changeit"
+# Limit since 2020-09-01, see https://www.ssl.com/blogs/398-day-browser-limit-for-ssl-tls-certificates-begins-september-1-2020/
+DAYS=398
+PASS="password"
 
 BUILD_DIR="build"
 
@@ -60,7 +61,7 @@ CRT_CSR="$BUILD_DIR/$NAME.cert.csr"
 CRT_PEM="$BUILD_DIR/$NAME.cert.pem"
 CRT_P12="$BUILD_DIR/$NAME.cert.p12"
 
-KEYSTORE="$BUILD_DIR/keystore"
+KEYSTORE="$BUILD_DIR/application.keystore"
 
 OPENSSL="openssl"
 KEYTOOL="keytool"
@@ -96,10 +97,10 @@ extendedKeyUsage = serverAuth
 nsCertType = server
 nsComment = OpenSSL Generated Server Certificate " 
 
-cd $(dirname $0)
+cd "$(dirname "$0")" || exit
 
 rm -rf $BUILD_DIR
-mkdir $BUILD_DIR
+mkdir -p $BUILD_DIR
 
 # Create CA key and certificate
 $OPENSSL req -x509 -newkey rsa:4096 -nodes -keyout $CA_KEY_PEM -out $CA_CRT_PEM -days $DAYS -config <(echo "$CONFIG") -subj "$CA_SUBJECT"
@@ -110,7 +111,7 @@ $OPENSSL req -newkey rsa:2048 -nodes -keyout $KEY_PEM -out $CRT_CSR -config <(ec
 $OPENSSL req -text -noout -in $CRT_CSR
 
 # Sign CSR
-$OPENSSL x509 -req -in $CRT_CSR -CA $CA_CRT_PEM -CAkey $CA_KEY_PEM -CAcreateserial -out $CRT_PEM -days $DAYS -extfile <(echo "$CONFIG") -extensions server_cert
+$OPENSSL x509 -req -in $CRT_CSR -CA $CA_CRT_PEM -CAkey $CA_KEY_PEM -CAcreateserial -out $CRT_PEM -days $DAYS -sha512 -extfile <(echo "$CONFIG") -extensions server_cert
 $OPENSSL x509 -text -noout -in $CRT_PEM
 
 # Combine certificate and key into pkcs12 keystore
@@ -118,7 +119,7 @@ $OPENSSL pkcs12 -inkey $KEY_PEM -in $CRT_PEM -export -name $NAME -out $CRT_P12 -
 $OPENSSL pkcs12 -info -noout -in $CRT_P12 -passin pass:$PASS
 
 # Import pkcs12 keystore into Java keystore
-$KEYTOOL -importkeystore -srckeystore $CRT_P12 -srcstoretype pkcs12 -srcstorepass $PASS -destkeystore $KEYSTORE -deststorepass $PASS
+$KEYTOOL -importkeystore -srckeystore $CRT_P12 -srcstoretype pkcs12 -srcstorepass $PASS -destkeystore $KEYSTORE -deststorepass $PASS -deststoretype pkcs12
 $KEYTOOL -list -keystore $KEYSTORE -storepass $PASS
 
 rm -f $CA_KEY_PEM $CA_SRL $CRT_CSR $CRT_P12
